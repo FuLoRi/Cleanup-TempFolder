@@ -210,7 +210,7 @@ $OldFolders = @()
 Write-Host "Scan phase initiated..."
 $OldFiles = Scan-Folder -DirPath $Path
 
-Write-Host "Found $(($OldFiles).count) old file(s).`n"
+Write-Host "Found $(($OldFiles).Count) old file(s).`n"
 
 # Prompt user to proceed to Analyze phase
 $Proceed = Read-Host "Proceed to Analyze phase? (Y/N)"
@@ -229,7 +229,7 @@ if ($DebugMode -eq $true) { Write-Host "  DEBUG - OldFolders array outside Analy
 # If you need to use the AllOld flag, you can access it like this:
 $AllOld = $FolderAnalysis.AllOld
 
-Write-Host "Found $(($global:OldFolders).count) old/empty folder(s).`n"
+Write-Host "Found $(($global:OldFolders).Count) old/empty folder(s).`n"
 
 # Prompt user to proceed to Recycle phase
 $Proceed = Read-Host "Proceed to Recycle phase? (Y/N)"
@@ -241,14 +241,17 @@ Write-Host "Recycle phase initiated..."
 # Check to see if there are any folders to be recycled
 if (($global:OldFolders).Count -gt 0) {
 	
+	# Tell the user how many old/empty folders were found
+	$ListFolders = Read-Host "Found $(($global:OldFolders).Count) old/empty folders. List them? (Y/N)"
+	
 	# Show the user a list of all of the old folders
-	if ($VerboseOutput -eq $true) { 
-		Write-Host "Old/Empty Folders to be recycled:"
+	if ($VerboseOutput -eq $true -or $ListFolders -eq "Y" -or $ListFolders -eq "y") { 
+		Write-Host "Old/empty Folders to be recycled:"
 		$global:OldFolders | ForEach-Object { Write-Host "   $_" }
 	}
 
 	# Prompt the user to confirm before recycling old folders
-	$recycleFolders = Read-Host "Really recycle $(($global:OldFolders).count) old/empty folder(s)? (Y/N)"
+	$recycleFolders = Read-Host "Really recycle $(($global:OldFolders).Count) old/empty folder(s)? (Y/N)"
 	# If user confirms, proceed with recycling old folders
 	if ($recycleFolders -eq "y" -or $recycleFolders -eq "Y") {
 		foreach ($OldFolder in $global:OldFolders) {
@@ -260,11 +263,11 @@ if (($global:OldFolders).Count -gt 0) {
 			$OldFiles = $OldFiles | Where-Object { -not $_.StartsWith($OldFolder, [System.StringComparison]::OrdinalIgnoreCase) }
 			if ($DebugMode -eq $true) { Write-Host "  DEBUG - OldFiles array after pruning: $($OldFiles.Count)" }
 		}
-		Write-Host "Recycled $(($global:OldFolders).count) old/empty folder(s).`n"
+		Write-Host "Recycled $(($global:OldFolders).Count) old/empty folder(s).`n"
 	}
 }
 elseif (($global:OldFolders).Count -eq 0) {
-	Write-Host "No Old/Empty Folders to be recycled.`n"
+	Write-Host "No old/empty folders to be recycled.`n"
 }
 else {
 	Write-Host "Oopsie! The count of old/empty folders is neither greater than nor equal to zero. This shouldn't happen!`n"
@@ -274,25 +277,28 @@ else {
 # Check to see if there are any files to be recycled
 if (($OldFiles).Count -gt 0) {
 
+	# Tell the user how many old files were found
+	$ListFiles = Read-Host "Found $(($OldFiles).Count) old files. List them? (Y/N)"
+	
 	# Show the user a list of all of the old files
-	if ($VerboseOutput -eq $true) { 
-		Write-Host "Old Files to be recycled:"
+	if ($VerboseOutput -eq $true -or $ListFiles -eq "Y" -or $ListFiles -eq "y") { 
+		Write-Host "Old files to be recycled:"
 		$OldFiles | ForEach-Object { Write-Host "   $_" }
 	}
 
 	# Prompt the user to confirm before recycling old files
-	$recycleFiles = Read-Host "Really recycle $(($OldFiles).count) old/empty file(s)? (Y/N)"
+	$recycleFiles = Read-Host "Really recycle $(($OldFiles).Count) old file(s)? (Y/N)"
 	# If user confirms, proceed with recycling old files
 	if ($recycleFiles -eq "y" -or $recycleFiles -eq "Y") {
 		foreach ($OldFile in $OldFiles) {
 			if ($VerboseOutput -eq $true) { Write-Host "VERBOSE - Recycling file: $OldFile" }
 			if ($TestMode -ne $true) { MoveTo-RecycleBin -Path $OldFile }
 		}
-		Write-Host "Recycled $(($OldFiles).count) old file(s).`n"
+		Write-Host "Recycled $(($OldFiles).Count) old file(s).`n"
 	}
 }
 elseif (($OldFiles).Count -eq 0) {
-	Write-Host "No Old Files to be recycled.`n"
+	Write-Host "No old files to be recycled.`n"
 }
 else {
 	Write-Host "Oopsie! The count of old files is neither greater than nor equal to zero. This shouldn't happen!`n"
