@@ -10,6 +10,110 @@ Function MoveTo-RecycleBin {
     $Shell = New-Object -ComObject Shell.Application
     $Shell.NameSpace('shell:RecycleBinFolder').MoveHere($Path)
 }
+
+# Function to scan directory
+Function Scan-Directory {
+    Param (
+        [Parameter(Mandatory = $true)]
+        [string]$DirPath,
+
+                
+        [Parameter(Mandatory = $false)]
+        [string[]]$OldFiles = @()
+    )
+    if ($VerboseOutput -eq $true) { Write-Host "VERBOSE - Scanning folder: $DirPath" }
+    $Files = Get-ChildItem -Path $DirPath -File
+    foreach ($File in $Files) {
+        $FileAge = ($CurrentDate - $File.LastWriteTime).Days
+        if ($DebugMode -eq $true) { Write-Host "  DEBUG -    Filename = $File" }
+		if ($DebugMode -eq $true) { Write-Host "  DEBUG -    File age = $FileAge days" }
+        if ($FileAge -gt $Age) {
+            if ($VerboseOutput -eq $true) { Write-Host "VERBOSE -    $File is $FileAge days old and will be recycled." }
+            $OldFiles += $File.FullName
+            if ($DebugMode -eq $true) { Write-Host "  DEBUG - Old files found so far: $(($OldFiles).Count)" }
+        }
+    }
+    $SubFolders = Get-ChildItem -Path $DirPath -Directory
+    foreach ($SubFolder in $SubFolders) {
+        $OldFiles = Scan-Directory -DirPath $SubFolder.FullName -OldFiles $OldFiles
+    }
+    # Return the updated array
+    return $OldFiles
+}
+
+# Function to analyze a folder
+Function Analyze-Folder {
+    Param (
+        [Parameter(Mandatory = $true)]
+        [string]$FolderFullPath,
+        
+        [Parameter(Mandatory = $false)]
+        [string[]]$OldFolders = @()
+    )
+    if ($VerboseOutput -eq $true) { Write-Host "VERBOSE - Analyzing folder: $FolderFullPath" }
+    
+    $AllOld = $true  # Assume all contents are old initially
+    
+    # Get subfolders
+    $SubFolders = Get-ChildItem -Path $FolderFullPath -Directory
+    
+    # If there are subfolders, recurse into them first
+    if ($SubFolders) {
+        foreach ($SubFolder in $SubFolders) {
+            $SubFolderAnalysis = Analyze-Folder -FolderFullPath $SubFolder.FullName -OldFolders $OldFolders
+            $OldFolders = $SubFolderAnalysis.OldFolders
+			if ($DebugMode -eq $true) { Write-Host "  DEBUG - After SubFolderAnalysis, OldFolders count = $(($OldFolders).Count)" }
+			$SubFolderAllOld = $SubFolderAnalysis.AllOld
+			if ($DebugMode -eq $true) { Write-Host "  DEBUG - After SubFolderAnalysis, SubFolderAllOld = $($SubFolderAllOld)" }
+            if (-not $SubFolderAllOld) {
+                $AllOld = $false  # If any subfolder is not old, set $AllOld to false
+            }
+        }
+    }
+    
+    # Now analyze files in the current folder
+    $Files = Get-ChildItem -Path $FolderFullPath -File
+    foreach ($File in $Files) {
+        $FileAge = ($CurrentDate - $File.LastWriteTime).Days
+        if ($FileAge -le $Age) {
+            $AllOld = $false  # If any file is new, set $AllOld to false
+        }
+    }
+
+	# If all contents are old, mark the current folder as old
+	if ($AllOld) {
+		if ($VerboseOutput -eq $true) { Write-Host "VERBOSE -   Marking $FolderFullPath for recycling." }
+		$OldFolders += $FolderFullPath
+		if ($DebugMode -eq $true) { Write-Host "  DEBUG - After marking, OldFolders count = $(($OldFolders).Count)" }
+
+		# Check if $FolderFullPath is in $OldFolders before proceeding
+		if ($OldFolders -contains $FolderFullPath) {
+			if ($VerboseOutput -eq $true) { Write-Host "VERBOSE -   Removing any previously marked subfolders of: $FolderFullPath" }
+			
+			# Unmark any redundant subfolders
+			$OldFolders = $OldFolders | Where-Object {
+				# Keep the current folder
+				$_ -eq $FolderFullPath -or
+				# Or any folder that is not a subfolder of the current folder
+				-not ($_ -like "$FolderFullPath\*")
+			}
+			
+			if ($DebugMode -eq $true) { Write-Host "  DEBUG - After unmarking, OldFolders count = $(($OldFolders).Count)" }
+		}
+	}
+
+	# Create a result object to hold both the $AllOld flag and the updated $OldFolders array
+    $result = @{
+        AllOld = $AllOld
+        OldFolders = $OldFolders
+    }
+    # Debugging output
+    if ($DebugMode -eq $true) { Write-Host "  DEBUG - OldFolders array inside Analyze-Folder: $($OldFolders.Count)" }
+
+    # Return the result object
+    return $result
+}
+
 # Set defaults
 $defaultVerboseOutput = $false
 $defaultDebugMode = $false
@@ -62,23 +166,6 @@ do {
     }
 } while (-not $TestMode -and $userTestMode)
 
-<# SAVING JUST IN CASE
-# Get and validate path
-do {
-    $userPath = Read-Host "Enter the path ($defaultPath)"
-    $Path = if ($userPath) { 
-        if (-not (Test-Path $userPath)) {
-            Write-Host "The path $userPath does not exist. Please enter a valid path."
-            $null
-        } else {
-            $userPath
-        }
-    } else { 
-        $defaultPath 
-    }
-} while (-not $Path)
-#>
-
 # Get and validate path
 do {
     $userPath = Read-Host "Enter the path ($defaultPath)"
@@ -121,154 +208,9 @@ $OldFolders = @()
 
 # Scan phase
 Write-Host "Scan phase initiated..."
-Function Scan-Directory {
-    Param (
-        [Parameter(Mandatory = $true)]
-        [string]$DirPath,
-
-                
-        [Parameter(Mandatory = $false)]
-        [string[]]$OldFiles = @()
-    )
-    if ($VerboseOutput -eq $true) { Write-Host "VERBOSE - Scanning folder: $DirPath" }
-    $Files = Get-ChildItem -Path $DirPath -File
-    foreach ($File in $Files) {
-        $FileAge = ($CurrentDate - $File.LastWriteTime).Days
-        if ($DebugMode -eq $true) { Write-Host "  DEBUG -    Filename = $File" }
-		if ($DebugMode -eq $true) { Write-Host "  DEBUG -    File age = $FileAge days" }
-        if ($FileAge -gt $Age) {
-            if ($VerboseOutput -eq $true) { Write-Host "VERBOSE -    $File is $FileAge days old and will be recycled." }
-            $OldFiles += $File.FullName
-            if ($DebugMode -eq $true) { Write-Host "  DEBUG - Old files found so far: $(($OldFiles).Count)" }
-        }
-    }
-    $SubFolders = Get-ChildItem -Path $DirPath -Directory
-    foreach ($SubFolder in $SubFolders) {
-        $OldFiles = Scan-Directory -DirPath $SubFolder.FullName -OldFiles $OldFiles
-    }
-    # Return the updated array
-    return $OldFiles
-}
-
 $OldFiles = Scan-Directory -DirPath $Path
 
 Write-Host "Found $(($OldFiles).count) old file(s).`n"
-
-# Function to analyze a folder
-Function Analyze-Folder {
-    Param (
-        [Parameter(Mandatory = $true)]
-        [string]$FolderFullPath,
-        
-        [Parameter(Mandatory = $false)]
-        [string[]]$OldFolders = @()
-    )
-    if ($VerboseOutput -eq $true) { Write-Host "VERBOSE - Analyzing folder: $FolderFullPath" }
-    
-    $AllOld = $true  # Assume all contents are old initially
-    
-    # Get subfolders
-    $SubFolders = Get-ChildItem -Path $FolderFullPath -Directory
-    
-    # If there are subfolders, recurse into them first
-    if ($SubFolders) {
-        foreach ($SubFolder in $SubFolders) {
-            $SubFolderAnalysis = Analyze-Folder -FolderFullPath $SubFolder.FullName -OldFolders $OldFolders
-            $OldFolders = $SubFolderAnalysis.OldFolders
-			if ($DebugMode -eq $true) { Write-Host "  DEBUG - After SubFolderAnalysis, OldFolders count = $(($OldFolders).Count)" }
-			$SubFolderAllOld = $SubFolderAnalysis.AllOld
-			if ($DebugMode -eq $true) { Write-Host "  DEBUG - After SubFolderAnalysis, SubFolderAllOld = $($SubFolderAllOld)" }
-            if (-not $SubFolderAllOld) {
-                $AllOld = $false  # If any subfolder is not old, set $AllOld to false
-            }
-        }
-    }
-    
-    # Now analyze files in the current folder
-    $Files = Get-ChildItem -Path $FolderFullPath -File
-    foreach ($File in $Files) {
-        $FileAge = ($CurrentDate - $File.LastWriteTime).Days
-        if ($FileAge -le $Age) {
-            $AllOld = $false  # If any file is new, set $AllOld to false
-        }
-    }
-
-	<# BEGIN - NON-WORKING CODE - SAVING JUST IN CASE CHATGPT IS WRONG #
-	# If all contents are old, mark the current folder as old
-    if ($AllOld) {
-        if ($VerboseOutput -eq $true) { Write-Host "VERBOSE -   Marking $FolderFullPath for recycling." }
-        $OldFolders += $FolderFullPath
-		if ($DebugMode -eq $true) { Write-Host "  DEBUG - After marking, OldFolders count = $(($OldFolders).Count)" }
-        
-        # Unmark any redundant subfolders
-		if ($VerboseOutput -eq $true) { Write-Host "VERBOSE -   Checking for previously marked subfolders of: $FolderFullPath" }
-        foreach ($OldFolder in $OldFolders) {
-			if ($VerboseOutput -eq $true) { Write-Host "VERBOSE -   Checking marked folder: $OldFolder" }
-            if ($OldFolder.StartsWith($FolderFullPath) -and $OldFolder -ne $FolderFullPath) {
-                if ($VerboseOutput -eq $true) { Write-Host "VERBOSE -   Unmarking subfolder: $OldFolder" }
-                $OldFolders = $OldFolders -notmatch [regex]::Escape($OldFolder)
-				if ($DebugMode -eq $true) { Write-Host "  DEBUG - After unmarking, OldFolders count = $(($OldFolders).Count)" }
-            }
-			else {
-				if ($VerboseOutput -eq $true) { Write-Host "VERBOSE -   Not a subfolder." }
-			}
-        }
-    }
-	# END NON-WORKING CODE #>
-	
-	<# BEGIN TEST CODE FROM CHATGPT #>
-	# If all contents are old, mark the current folder as old
-	if ($AllOld) {
-		if ($VerboseOutput -eq $true) { Write-Host "VERBOSE -   Marking $FolderFullPath for recycling." }
-		$OldFolders += $FolderFullPath
-		if ($DebugMode -eq $true) { Write-Host "  DEBUG - After marking, OldFolders count = $(($OldFolders).Count)" }
-
-		# Check if $FolderFullPath is in $OldFolders before proceeding
-		if ($OldFolders -contains $FolderFullPath) {
-			if ($VerboseOutput -eq $true) { Write-Host "VERBOSE -   Removing any previously marked subfolders of: $FolderFullPath" }
-			
-			<# BEGIN - THIS CODE DOESN'T WORK! #
-			# Unmark any redundant subfolders
-			if ($VerboseOutput -eq $true) { Write-Host "VERBOSE -   Checking for previously marked subfolders of: $FolderFullPath" }
-			foreach ($OldFolder in $OldFolders) {
-				if ($VerboseOutput -eq $true) { Write-Host "VERBOSE -   Checking marked folder: $OldFolder" }
-				if ($OldFolder.StartsWith($FolderFullPath) -and $OldFolder -ne $FolderFullPath) {
-					if ($VerboseOutput -eq $true) { Write-Host "VERBOSE -   Unmarking subfolder: $OldFolder" }
-					$OldFolders = $OldFolders -notmatch [regex]::Escape($OldFolder)
-					if ($DebugMode -eq $true) { Write-Host "  DEBUG - After unmarking, OldFolders count = $(($OldFolders).Count)" }
-				}
-				else {
-					if ($VerboseOutput -eq $true) { Write-Host "VERBOSE -   Not a subfolder." }
-				}
-			}
-			# END #>
-			
-			<# BEGIN - THIS CODE IS THE ONLY ONE THAT ACTUALLY WORKS! #>
-			# Unmark any redundant subfolders
-			$OldFolders = $OldFolders | Where-Object {
-				# Keep the current folder
-				$_ -eq $FolderFullPath -or
-				# Or any folder that is not a subfolder of the current folder
-				-not ($_ -like "$FolderFullPath\*")
-			}
-			<# END #>
-			
-			if ($DebugMode -eq $true) { Write-Host "  DEBUG - After unmarking, OldFolders count = $(($OldFolders).Count)" }
-		}
-	}
-	<# END TEST CODE FROM CHATGPT #>
-
-	# Create a result object to hold both the $AllOld flag and the updated $OldFolders array
-    $result = @{
-        AllOld = $AllOld
-        OldFolders = $OldFolders
-    }
-    # Debugging output
-    if ($DebugMode -eq $true) { Write-Host "  DEBUG - OldFolders array inside Analyze-Folder: $($OldFolders.Count)" }
-
-    # Return the result object
-    return $result
-}
 
 # Prompt user to proceed to Analyze phase
 $Proceed = Read-Host "Proceed to Analyze phase? (Y/N)"
@@ -358,3 +300,4 @@ else {
 }
 
 Write-Host "Done."
+$Exit = Read-Host "Press Enter to finish"
