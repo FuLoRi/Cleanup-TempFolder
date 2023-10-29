@@ -11,8 +11,8 @@ Function MoveTo-RecycleBin {
     $Shell.NameSpace('shell:RecycleBinFolder').MoveHere($Path)
 }
 
-# Function to scan directory
-Function Scan-Directory {
+# Function to scan folder
+Function Scan-Folder {
     Param (
         [Parameter(Mandatory = $true)]
         [string]$DirPath,
@@ -35,7 +35,7 @@ Function Scan-Directory {
     }
     $SubFolders = Get-ChildItem -Path $DirPath -Directory
     foreach ($SubFolder in $SubFolders) {
-        $OldFiles = Scan-Directory -DirPath $SubFolder.FullName -OldFiles $OldFiles
+        $OldFiles = Scan-Folder -DirPath $SubFolder.FullName -OldFiles $OldFiles
     }
     # Return the updated array
     return $OldFiles
@@ -208,7 +208,7 @@ $OldFolders = @()
 
 # Scan phase
 Write-Host "Scan phase initiated..."
-$OldFiles = Scan-Directory -DirPath $Path
+$OldFiles = Scan-Folder -DirPath $Path
 
 Write-Host "Found $(($OldFiles).count) old file(s).`n"
 
